@@ -1,0 +1,1311 @@
+import React, { useState, useEffect, useCallback } from "react";
+import { Check, Star, Award, History, Gift, Calendar } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import confetti from "canvas-confetti";
+
+interface Task {
+  id: number;
+  name: string;
+  emoji: string;
+  completed: boolean;
+}
+
+interface HistoryItem {
+  date: string;
+  reward: string;
+  emoji: string;
+  cost: number;
+}
+
+interface Reward {
+  id: number;
+  name: string;
+  emoji: string;
+  cost: number;
+}
+
+interface UserData {
+  name: string;
+  stars: number;
+  totalStars: number;
+  completedTasks: number;
+  tasks: Task[];
+  history: HistoryItem[];
+  streak: {
+    current: number;
+    days: boolean[];
+    lastUpdated: string | null;
+  };
+  weeklyCompleted: number;
+  weeklyLog: {
+    [day: string]: boolean;
+  };
+}
+
+interface AppData {
+  michael: UserData;
+  gaya: UserData;
+  rewards: Reward[];
+}
+
+const Index = () => {
+  const { toast } = useToast();
+  const [screen, setScreen] = useState<string>("tasks");
+  const [currentChild, setCurrentChild] = useState<string>("");
+  const [taskName, setTaskName] = useState<string>("");
+  const [selectedEmoji, setSelectedEmoji] = useState<string>("📝");
+  const [rewardName, setRewardName] = useState<string>("");
+  const [rewardCost, setRewardCost] = useState<number>(5);
+  const [selectedRewardEmoji, setSelectedRewardEmoji] = useState<string>("🎁");
+  const [showTaskModal, setShowTaskModal] = useState<boolean>(false);
+  const [showRewardModal, setShowRewardModal] = useState<boolean>(false);
+  const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
+  const [showSuccessModal, setShowSuccessModal] = useState<boolean>(false);
+  const [confirmAction, setConfirmAction] = useState<() => void>(() => {});
+  const [confirmMessage, setConfirmMessage] = useState<string>("");
+  const [confirmTitle, setConfirmTitle] = useState<string>("");
+  const [successTitle, setSuccessTitle] = useState<string>("");
+  const [successMessage, setSuccessMessage] = useState<string>("");
+  const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
+  const [historyChild, setHistoryChild] = useState<string>("");
+
+  // Hebrew days of the week
+  const weekDays = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+
+  // Initialize data with default values
+  const defaultData: AppData = {
+    michael: {
+      name: "מיכאל",
+      stars: 0,
+      totalStars: 0,
+      completedTasks: 0,
+      tasks: [
+        { id: 1, name: "סידור המיטה", emoji: "🛏️", completed: false },
+        { id: 2, name: "צחצוח שיניים", emoji: "🦷", completed: false },
+        { id: 3, name: "הכנת שיעורי בית", emoji: "📚", completed: false }
+      ],
+      history: [],
+      streak: {
+        current: 0,
+        days: [false, false, false, false, false],
+        lastUpdated: null
+      },
+      weeklyCompleted: 0,
+      weeklyLog: {}
+    },
+    gaya: {
+      name: "גאיה",
+      stars: 0,
+      totalStars: 0,
+      completedTasks: 0,
+      tasks: [
+        { id: 1, name: "סידור המיטה", emoji: "🛏️", completed: false },
+        { id: 2, name: "צחצוח שיניים", emoji: "🦷", completed: false },
+        { id: 3, name: "עזרה בשולחן", emoji: "🍽️", completed: false }
+      ],
+      history: [],
+      streak: {
+        current: 0,
+        days: [false, false, false, false, false],
+        lastUpdated: null
+      },
+      weeklyCompleted: 0,
+      weeklyLog: {}
+    },
+    rewards: [
+      { id: 1, name: "גלידה", emoji: "🍦", cost: 5 },
+      { id: 2, name: "סרט", emoji: "🎬", cost: 10 },
+      { id: 3, name: "משחק חדש", emoji: "🎮", cost: 20 }
+    ]
+  };
+
+  const [data, setData] = useState<AppData>(defaultData);
+
+  // Load data from localStorage
+  useEffect(() => {
+    const savedData = localStorage.getItem('kidsTasksData');
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        
+        // Add streak.lastUpdated if it doesn't exist
+        if (!parsed.michael.streak.lastUpdated) {
+          parsed.michael.streak.lastUpdated = null;
+        }
+        
+        if (!parsed.gaya.streak.lastUpdated) {
+          parsed.gaya.streak.lastUpdated = null;
+        }
+        
+        // Add weeklyCompleted if it doesn't exist
+        if (parsed.michael.weeklyCompleted === undefined) {
+          parsed.michael.weeklyCompleted = 0;
+        }
+        
+        if (parsed.gaya.weeklyCompleted === undefined) {
+          parsed.gaya.weeklyCompleted = 0;
+        }
+
+        // Add weeklyLog if it doesn't exist
+        if (!parsed.michael.weeklyLog) {
+          parsed.michael.weeklyLog = {};
+        }
+        
+        if (!parsed.gaya.weeklyLog) {
+          parsed.gaya.weeklyLog = {};
+        }
+        
+        setData(parsed);
+      } catch (error) {
+        console.error("Error parsing saved data:", error);
+        setData(defaultData);
+      }
+    }
+  }, []);
+
+  // Save data to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('kidsTasksData', JSON.stringify(data));
+  }, [data]);
+
+  // Reset completed tasks status if a new day has started
+  useEffect(() => {
+    const checkAndResetDailyTasks = () => {
+      const today = new Date().toLocaleDateString('he-IL');
+      
+      const updateChildData = (child: "michael" | "gaya") => {
+        // Only reset if the last update was on a different day
+        if (data[child].streak.lastUpdated !== today) {
+          const updatedTasks = data[child].tasks.map(task => ({
+            ...task,
+            completed: false
+          }));
+          
+          return {
+            ...data[child],
+            tasks: updatedTasks,
+            streak: {
+              ...data[child].streak,
+              lastUpdated: today
+            }
+          };
+        }
+        return data[child];
+      };
+      
+      setData(prevData => ({
+        ...prevData,
+        michael: updateChildData("michael"),
+        gaya: updateChildData("gaya")
+      }));
+    };
+    
+    checkAndResetDailyTasks();
+    
+    // Also check for weekly streak bonus
+    checkWeeklyStreak();
+
+    // Update weekly logs based on task completion status
+    updateWeeklyLogs();
+  }, []);
+
+  // Initialize and update weekly logs
+  const updateWeeklyLogs = useCallback(() => {
+    const today = new Date();
+    const dayName = weekDays[today.getDay()];
+    
+    const updateChildWeeklyLog = (child: "michael" | "gaya") => {
+      // Check if all tasks for today are completed
+      const allCompleted = data[child].tasks.length > 0 && data[child].tasks.every(t => t.completed);
+      
+      return {
+        ...data[child],
+        weeklyLog: {
+          ...data[child].weeklyLog,
+          [dayName]: allCompleted
+        }
+      };
+    };
+    
+    setData(prevData => ({
+      ...prevData,
+      michael: updateChildWeeklyLog("michael"),
+      gaya: updateChildWeeklyLog("gaya")
+    }));
+  }, [data, weekDays]);
+
+  // Check for weekly streak and award bonus stars
+  const checkWeeklyStreak = useCallback(() => {
+    const updateChildStreak = (child: "michael" | "gaya") => {
+      const { streak } = data[child];
+      const allDaysCompleted = streak.days.every(day => day);
+      
+      if (allDaysCompleted && streak.current >= 5) {
+        // Award 5 bonus stars for a 5-day streak
+        const updatedChild = {
+          ...data[child],
+          stars: data[child].stars + 5,
+          totalStars: data[child].totalStars + 5,
+          streak: {
+            ...streak,
+            current: 0,
+            days: [false, false, false, false, false]
+          }
+        };
+        
+        showSuccessMessage(
+          "מזל טוב! 🎉",
+          `${data[child].name} השלים/ה רצף של 5 ימים וקיבל/ה 5 כוכבים בונוס!`
+        );
+        
+        triggerConfetti();
+        
+        return updatedChild;
+      }
+      
+      return data[child];
+    };
+    
+    setData(prevData => ({
+      ...prevData,
+      michael: updateChildStreak("michael"),
+      gaya: updateChildStreak("gaya")
+    }));
+  }, [data]);
+
+  // Toggle task completion status
+  const toggleTask = (child: "michael" | "gaya", taskId: number) => {
+    const updatedData = { ...data };
+    const task = updatedData[child].tasks.find(t => t.id === taskId);
+    
+    if (task) {
+      const wasCompleted = task.completed;
+      task.completed = !wasCompleted;
+      
+      if (!wasCompleted) {
+        // Task was just completed
+        updatedData[child].stars += 1;
+        updatedData[child].totalStars += 1;
+        updatedData[child].completedTasks += 1;
+        updatedData[child].weeklyCompleted += 1;
+        
+        // Update streak
+        const today = new Date().toLocaleDateString('he-IL');
+        updatedData[child].streak.lastUpdated = today;
+        
+        // Update streak days by shifting and adding new day
+        updatedData[child].streak.days.shift();
+        updatedData[child].streak.days.push(true);
+        updatedData[child].streak.current += 1;
+
+        // Update weekly log
+        const dayName = weekDays[new Date().getDay()];
+        // Check if all tasks for today are completed after this one
+        const allCompleted = updatedData[child].tasks.every(t => t === task ? true : t.completed);
+        updatedData[child].weeklyLog[dayName] = allCompleted;
+        
+        showSuccessMessage(
+          `${updatedData[child].name} קיבל/ה כוכב!`,
+          `כל הכבוד! ${updatedData[child].name} השלים/ה את המשימה "${task.emoji} ${task.name}" וקיבל/ה כוכב.`
+        );
+        
+        // Check if all tasks for today are completed
+        const allTasksCompleted = updatedData[child].tasks.every(t => t.completed);
+        if (allTasksCompleted) {
+          toast({
+            title: "כל הכבוד!",
+            description: `${updatedData[child].name} השלים/ה את כל המשימות להיום! 🎉`,
+          });
+        }
+      } else {
+        // Task was uncompleted
+        updatedData[child].stars = Math.max(0, updatedData[child].stars - 1);
+        updatedData[child].completedTasks = Math.max(0, updatedData[child].completedTasks - 1);
+        updatedData[child].weeklyCompleted = Math.max(0, updatedData[child].weeklyCompleted - 1);
+        
+        // Update weekly log if this makes all tasks incomplete
+        const dayName = weekDays[new Date().getDay()];
+        const allCompleted = updatedData[child].tasks.every(t => t.completed);
+        updatedData[child].weeklyLog[dayName] = allCompleted;
+      }
+      
+      setData(updatedData);
+      
+      // Check for a streak of 5 days
+      if (updatedData[child].streak.current >= 5) {
+        checkWeeklyStreak();
+      }
+    }
+  };
+
+  // Add a new task
+  const addTask = (child: "michael" | "gaya") => {
+    setCurrentChild(child);
+    setTaskName("");
+    setSelectedEmoji("📝");
+    setShowTaskModal(true);
+  };
+
+  // Save a new task
+  const saveTask = () => {
+    if (taskName.trim()) {
+      setData(prevData => {
+        const childData = prevData[currentChild as "michael" | "gaya"];
+        const maxId = childData.tasks.length > 0 
+          ? Math.max(...childData.tasks.map(t => t.id)) 
+          : 0;
+        
+        const newTask = {
+          id: maxId + 1,
+          name: taskName.trim(),
+          emoji: selectedEmoji,
+          completed: false
+        };
+        
+        return {
+          ...prevData,
+          [currentChild]: {
+            ...childData,
+            tasks: [...childData.tasks, newTask]
+          }
+        };
+      });
+      
+      setShowTaskModal(false);
+    }
+  };
+
+  // Delete a task
+  const deleteTask = (child: "michael" | "gaya", taskId: number) => {
+    setData(prevData => {
+      const childData = { ...prevData[child] };
+      const taskIndex = childData.tasks.findIndex(t => t.id === taskId);
+      
+      if (taskIndex !== -1) {
+        // If task was completed, reduce stars and completed count
+        if (childData.tasks[taskIndex].completed) {
+          childData.stars = Math.max(0, childData.stars - 1);
+          childData.completedTasks = Math.max(0, childData.completedTasks - 1);
+        }
+        
+        childData.tasks = childData.tasks.filter(t => t.id !== taskId);
+        
+        return {
+          ...prevData,
+          [child]: childData
+        };
+      }
+      
+      return prevData;
+    });
+  };
+
+  // Add a new reward
+  const addReward = () => {
+    setRewardName("");
+    setRewardCost(5);
+    setSelectedRewardEmoji("🎁");
+    setShowRewardModal(true);
+  };
+
+  // Save a new reward
+  const saveReward = () => {
+    if (rewardName.trim() && rewardCost > 0) {
+      setData(prevData => {
+        const maxId = prevData.rewards.length > 0 
+          ? Math.max(...prevData.rewards.map(r => r.id)) 
+          : 0;
+        
+        const newReward = {
+          id: maxId + 1,
+          name: rewardName.trim(),
+          emoji: selectedRewardEmoji,
+          cost: rewardCost
+        };
+        
+        return {
+          ...prevData,
+          rewards: [...prevData.rewards, newReward]
+        };
+      });
+      
+      setShowRewardModal(false);
+    }
+  };
+
+  // Delete a reward
+  const deleteReward = (rewardId: number) => {
+    setConfirmTitle("מחיקת פרס");
+    setConfirmMessage("האם אתה בטוח שברצונך למחוק את הפרס?");
+    setConfirmAction(() => () => {
+      setData(prevData => ({
+        ...prevData,
+        rewards: prevData.rewards.filter(r => r.id !== rewardId)
+      }));
+      setShowConfirmModal(false);
+    });
+    setShowConfirmModal(true);
+  };
+
+  // Redeem a reward
+  const redeemReward = (child: "michael" | "gaya", rewardId: number) => {
+    const childData = data[child];
+    const reward = data.rewards.find(r => r.id === rewardId);
+    
+    if (!reward) return;
+    
+    if (childData.stars >= reward.cost) {
+      setConfirmTitle("רכישת פרס");
+      setConfirmMessage(`האם ${childData.name} רוצה לרכוש את הפרס "${reward.emoji} ${reward.name}" עבור ${reward.cost} כוכבים?`);
+      
+      setConfirmAction(() => () => {
+        setData(prevData => {
+          const updatedChild = { ...prevData[child] };
+          updatedChild.stars -= reward.cost;
+          
+          // Add to history
+          const now = new Date();
+          const dateStr = now.toLocaleDateString('he-IL');
+          
+          updatedChild.history.push({
+            date: dateStr,
+            reward: reward.name,
+            emoji: reward.emoji,
+            cost: reward.cost
+          });
+          
+          return {
+            ...prevData,
+            [child]: updatedChild
+          };
+        });
+        
+        showSuccessMessage(
+          "מזל טוב!",
+          `${data[child].name} קיבל/ה את הפרס "${reward.emoji} ${reward.name}"!`
+        );
+        
+        // Trigger confetti animation
+        triggerConfetti();
+        
+        setShowConfirmModal(false);
+      });
+      
+      setShowConfirmModal(true);
+    } else {
+      showSuccessMessage(
+        "אין מספיק כוכבים",
+        `ל${data[child].name} אין מספיק כוכבים לפרס זה. צריך עוד ${reward.cost - childData.stars} כוכבים.`
+      );
+    }
+  };
+
+  // Show history for a child
+  const showHistory = (child: "michael" | "gaya") => {
+    setHistoryChild(child);
+    setShowHistoryModal(true);
+  };
+
+  // Show success message modal
+  const showSuccessMessage = (title: string, message: string) => {
+    setSuccessTitle(title);
+    setSuccessMessage(message);
+    setShowSuccessModal(true);
+  };
+
+  // Trigger confetti animation
+  const triggerConfetti = () => {
+    confetti({
+      particleCount: 100,
+      spread: 70,
+      origin: { y: 0.6 }
+    });
+  };
+
+  // Calculate achievement progress
+  const calculateAchievementProgress = () => {
+    const totalTasks = data.michael.completedTasks + data.gaya.completedTasks;
+    const totalStars = data.michael.totalStars + data.gaya.totalStars;
+    
+    const firstTasksProgress = Math.min((totalTasks / 5) * 100, 100);
+    const championProgress = Math.min((totalTasks / 20) * 100, 100);
+    const starsProgress = Math.min((totalStars / 30) * 100, 100);
+    
+    const michaelStreakDays = data.michael.streak.days.filter(day => day).length;
+    const michaelStreakProgress = Math.min((michaelStreakDays / 3) * 100, 100);
+    
+    const gayaStreakDays = data.gaya.streak.days.filter(day => day).length;
+    const gayaStreakProgress = Math.min((gayaStreakDays / 3) * 100, 100);
+    
+    const michaelRewardsCount = data.michael.history.length;
+    const michaelRewardsProgress = Math.min((michaelRewardsCount / 5) * 100, 100);
+    
+    const gayaRewardsCount = data.gaya.history.length;
+    const gayaRewardsProgress = Math.min((gayaRewardsCount / 5) * 100, 100);
+    
+    return {
+      firstTasksProgress,
+      firstTasksText: `${totalTasks}/5`,
+      championProgress,
+      championText: `${totalTasks}/20`,
+      starsProgress,
+      starsText: `${totalStars}/30`,
+      michaelStreakProgress,
+      michaelStreakText: `${michaelStreakDays}/3`,
+      gayaStreakProgress,
+      gayaStreakText: `${gayaStreakDays}/3`,
+      michaelRewardsProgress,
+      michaelRewardsText: `${michaelRewardsCount}/5`,
+      gayaRewardsProgress,
+      gayaRewardsText: `${gayaRewardsCount}/5`
+    };
+  };
+
+  const achievements = calculateAchievementProgress();
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-20">
+      {/* Header */}
+      <header className="bg-gradient-to-r from-blue-500 to-purple-500 text-white p-4 text-center shadow-md">
+        <h1 className="text-3xl font-bold">מערכת המשימות של מיכאל וגאיה</h1>
+      </header>
+
+      {/* Tasks Screen */}
+      <div id="tasks-screen" className={`screen container mx-auto px-4 py-8 ${screen === 'tasks' ? '' : 'hidden'}`}>
+        <div className="flex flex-wrap -mx-2">
+          {/* Michael */}
+          <div className="w-full md:w-1/2 px-2 mb-6">
+            <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg p-6 shadow-lg">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-blue-800">מיכאל</h2>
+                <div className="flex items-center">
+                  <Star className="text-yellow-500 h-6 w-6 fill-yellow-500" />
+                  <span className="text-xl font-bold mr-2">{data.michael.stars}</span>
+                </div>
+              </div>
+              
+              {/* Streak display */}
+              <div className="streak-container mb-4">
+                <div className="flex-grow flex justify-between">
+                  <div className="flex">
+                    {data.michael.streak.days.map((active, i) => (
+                      <div 
+                        key={i} 
+                        className={`w-8 h-8 rounded-full flex items-center justify-center mx-1 
+                          ${active ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-600'}`}
+                      >
+                        {i + 1}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Tasks */}
+              <div className="space-y-3 mb-4">
+                {data.michael.tasks.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">אין משימות כרגע. הוסף משימות חדשות!</p>
+                ) : (
+                  data.michael.tasks.map((task) => (
+                    <div 
+                      key={task.id} 
+                      className={`task-card bg-white rounded-lg p-4 shadow flex justify-between items-center ${task.completed ? 'bg-green-50' : ''}`}
+                    >
+                      <div className="flex items-center">
+                        <input 
+                          type="checkbox" 
+                          id={`michael-task-${task.id}`} 
+                          className="w-5 h-5 ml-2 cursor-pointer" 
+                          checked={task.completed} 
+                          onChange={() => toggleTask("michael", task.id)}
+                        />
+                        <span className="text-2xl ml-2">{task.emoji || '📝'}</span>
+                        <label 
+                          htmlFor={`michael-task-${task.id}`} 
+                          className={`cursor-pointer ${task.completed ? 'line-through text-gray-500' : ''}`}
+                        >
+                          {task.name}
+                        </label>
+                      </div>
+                      <button 
+                        onClick={() => deleteTask("michael", task.id)} 
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <div className="mt-4 flex justify-between">
+                <button 
+                  onClick={() => addTask("michael")} 
+                  className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-lg transition duration-300 flex items-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+                  </svg>
+                  הוסף משימה
+                </button>
+                <button 
+                  onClick={() => showHistory("michael")} 
+                  className="bg-blue-400 hover:bg-blue-500 text-white py-2 px-4 rounded-lg transition duration-300"
+                >
+                  היסטוריה
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Gaya */}
+          <div className="w-full md:w-1/2 px-2 mb-6">
+            <div className="bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg p-6 shadow-lg">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-purple-800">גאיה</h2>
+                <div className="flex items-center">
+                  <Star className="text-yellow-500 h-6 w-6 fill-yellow-500" />
+                  <span className="text-xl font-bold mr-2">{data.gaya.stars}</span>
+                </div>
+              </div>
+              
+              {/* Streak display */}
+              <div className="streak-container mb-4">
+                <div className="flex-grow flex justify-between">
+                  <div className="flex">
+                    {data.gaya.streak.days.map((active, i) => (
+                      <div 
+                        key={i} 
+                        className={`w-8 h-8 rounded-full flex items-center justify-center mx-1 
+                          ${active ? 'bg-purple-500 text-white' : 'bg-gray-200 text-gray-600'}`}
+                      >
+                        {i + 1}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Tasks */}
+              <div className="space-y-3 mb-4">
+                {data.gaya.tasks.length === 0 ? (
+                  <p className="text-gray-500 text-center py-4">אין משימות כרגע. הוסף משימות חדשות!</p>
+                ) : (
+                  data.gaya.tasks.map((task) => (
+                    <div 
+                      key={task.id} 
+                      className={`task-card bg-white rounded-lg p-4 shadow flex justify-between items-center ${task.completed ? 'bg-green-50' : ''}`}
+                    >
+                      <div className="flex items-center">
+                        <input 
+                          type="checkbox" 
+                          id={`gaya-task-${task.id}`} 
+                          className="w-5 h-5 ml-2 cursor-pointer" 
+                          checked={task.completed} 
+                          onChange={() => toggleTask("gaya", task.id)}
+                        />
+                        <span className="text-2xl ml-2">{task.emoji || '📝'}</span>
+                        <label 
+                          htmlFor={`gaya-task-${task.id}`} 
+                          className={`cursor-pointer ${task.completed ? 'line-through text-gray-500' : ''}`}
+                        >
+                          {task.name}
+                        </label>
+                      </div>
+                      <button 
+                        onClick={() => deleteTask("gaya", task.id)} 
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <div className="mt-4 flex justify-between">
+                <button 
+                  onClick={() => addTask("gaya")} 
+                  className="bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-lg transition duration-300 flex items-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+                  </svg>
+                  הוסף משימה
+                </button>
+                <button 
+                  onClick={() => showHistory("gaya")} 
+                  className="bg-purple-400 hover:bg-purple-500 text-white py-2 px-4 rounded-lg transition duration-300"
+                >
+                  היסטוריה
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Rewards Screen */}
+      <div id="rewards-screen" className={`screen container mx-auto px-4 py-8 ${screen === 'rewards' ? '' : 'hidden'}`}>
+        <header className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-green-600 mb-2">חנות פרסים 🎁</h1>
+          <p className="text-gray-600">השתמשו בכוכבים שצברתם כדי לקנות פרסים מיוחדים!</p>
+        </header>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {data.rewards.length === 0 ? (
+            <p className="text-gray-500 text-center py-4 col-span-3">אין פרסים כרגע. הוסף פרסים חדשים!</p>
+          ) : (
+            data.rewards.map((reward) => (
+              <div key={reward.id} className="reward-card bg-white rounded-lg p-4 shadow-lg border-2 border-yellow-200">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center">
+                    <span className="text-3xl ml-2">{reward.emoji || '🎁'}</span>
+                    <h3 className="text-lg font-bold">{reward.name}</h3>
+                  </div>
+                  <div className="flex items-center">
+                    <Star className="text-yellow-500 h-5 w-5 fill-yellow-500 ml-1" />
+                    <span className="font-bold">{reward.cost}</span>
+                  </div>
+                </div>
+                <div className="flex justify-between mt-4">
+                  <button 
+                    onClick={() => redeemReward("michael", reward.id)} 
+                    className="bg-blue-500 hover:bg-blue-600 text-white py-1 px-3 rounded text-sm"
+                  >
+                    מיכאל
+                  </button>
+                  <button 
+                    onClick={() => redeemReward("gaya", reward.id)} 
+                    className="bg-purple-500 hover:bg-purple-600 text-white py-1 px-3 rounded text-sm"
+                  >
+                    גאיה
+                  </button>
+                  <button 
+                    onClick={() => deleteReward(reward.id)} 
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        
+        <div className="mt-6 text-center">
+          <button 
+            onClick={addReward} 
+            className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-lg transition duration-300 flex items-center mx-auto"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-1" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
+            הוסף פרס חדש
+          </button>
+        </div>
+      </div>
+
+      {/* Weekly Task Board (replaces the Lottery Screen) */}
+      <div id="weekly-task-board" className={`screen container mx-auto px-4 py-8 ${screen === 'weekly-task-board' ? '' : 'hidden'}`}>
+        <header className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-amber-600 mb-2">לוח משימות שבועי <Calendar className="inline-block h-8 w-8" /></h1>
+          <p className="text-gray-600">בדקו אילו משימות בוצעו בכל יום במהלך השבוע</p>
+        </header>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Michael's Weekly Task Board */}
+          <div>
+            <h2 className="text-2xl font-bold text-blue-800 mb-4">מיכאל</h2>
+            <table className="w-full text-center border border-collapse border-blue-200">
+              <thead>
+                <tr className="bg-blue-100">
+                  <th className="border border-blue-200 p-2">יום</th>
+                  <th className="border border-blue-200 p-2">סטטוס</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weekDays.map((day) => {
+                  const isCompleted = data.michael.weeklyLog[day] || false;
+                  return (
+                    <tr key={day}>
+                      <td className="border border-blue-200 p-2">{day}</td>
+                      <td className={`border border-blue-200 p-2 ${isCompleted ? 'text-green-600 font-bold' : 'text-red-500'}`}>
+                        {isCompleted ? '✓' : '✗'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Gaya's Weekly Task Board */}
+          <div>
+            <h2 className="text-2xl font-bold text-purple-800 mb-4">גאיה</h2>
+            <table className="w-full text-center border border-collapse border-purple-200">
+              <thead>
+                <tr className="bg-purple-100">
+                  <th className="border border-purple-200 p-2">יום</th>
+                  <th className="border border-purple-200 p-2">סטטוס</th>
+                </tr>
+              </thead>
+              <tbody>
+                {weekDays.map((day) => {
+                  const isCompleted = data.gaya.weeklyLog[day] || false;
+                  return (
+                    <tr key={day}>
+                      <td className="border border-purple-200 p-2">{day}</td>
+                      <td className={`border border-purple-200 p-2 ${isCompleted ? 'text-green-600 font-bold' : 'text-red-500'}`}>
+                        {isCompleted ? '✓' : '✗'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="mt-8 bg-yellow-50 p-4 rounded-lg border border-yellow-200">
+          <h3 className="text-lg font-bold text-yellow-800 mb-2">בונוס שבועי!</h3>
+          <p className="text-gray-700">
+            השלימו את כל המשימות במשך 5 ימים ברציפות וקבלו 5 כוכבים בונוס! 🌟
+          </p>
+        </div>
+      </div>
+
+      {/* Achievements Screen */}
+      <div id="achievements-screen" className={`screen container mx-auto px-4 py-8 ${screen === 'achievements' ? '' : 'hidden'}`}>
+        <header className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-indigo-600 mb-2">יעדים והישגים <Award className="inline-block h-8 w-8" /></h1>
+          <p className="text-gray-600">עקבו אחר ההתקדמות והישגים מיוחדים!</p>
+        </header>
+        
+        <div className="flex flex-wrap -mx-2 mb-8">
+          {/* Michael Summary */}
+          <div className="w-full md:w-1/2 px-2 mb-6">
+            <div className="bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg p-6 shadow-lg">
+              <h2 className="text-2xl font-bold text-blue-800 mb-4">מיכאל - סיכום</h2>
+              
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold">כוכבים שנצברו:</span>
+                  <div className="flex items-center">
+                    <Star className="text-yellow-500 h-5 w-5 fill-yellow-500 ml-1" />
+                    <span className="text-lg font-bold">{data.michael.totalStars}</span>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center">
+                  <span className="font-bold">משימות שהושלמו:</span>
+                  <span className="text-lg font-bold">{data.michael.completedTasks}</span>
+                </div>
+                
+                <div className="flex justify-between items-center">
+                  <span className="font-bold">פרסים שנקנו:</span>
+                  <span className="text-lg font-bold">{data.michael.history.length}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Gaya Summary */}
+          <div className="w-full md:w-1/2 px-2 mb-6">
+            <div className="bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg p-6 shadow-lg">
+              <h2 className="text-2xl font-bold text-purple-800 mb-4">גאיה - סיכום</h2>
+              
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold">כוכבים שנצברו:</span>
+                  <div className="flex items-center">
+                    <Star className="text-yellow-500 h-5 w-5 fill-yellow-500 ml-1" />
+                    <span className="text-lg font-bold">{data.gaya.totalStars}</span>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center">
+                  <span className="font-bold">משימות שהושלמו:</span>
+                  <span className="text-lg font-bold">{data.gaya.completedTasks}</span>
+                </div>
+                
+                <div className="flex justify-between items-center">
+                  <span className="font-bold">פרסים שנקנו:</span>
+                  <span className="text-lg font-bold">{data.gaya.history.length}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Shared Achievements */}
+        <h2 className="text-2xl font-bold text-center text-indigo-700 mb-6">הישגים משותפים</h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* First Tasks Achievement */}
+          <div className="bg-white rounded-lg p-4 shadow-lg border-2 border-indigo-200">
+            <div className="flex items-center mb-2">
+              <span className="text-3xl ml-2">🌟</span>
+              <h3 className="text-lg font-bold">משימות ראשונות</h3>
+            </div>
+            <p className="text-gray-600 mb-2">השלמת 5 משימות (משותף)</p>
+            <div className="progress-bar">
+              <div 
+                className="progress-fill bg-indigo-500" 
+                style={{width: `${achievements.firstTasksProgress}%`}}
+              ></div>
+            </div>
+            <div className="text-xs text-gray-500 mt-1 text-left">{achievements.firstTasksText}</div>
+          </div>
+          
+          {/* Champion Achievement */}
+          <div className="bg-white rounded-lg p-4 shadow-lg border-2 border-indigo-200">
+            <div className="flex items-center mb-2">
+              <span className="text-3xl ml-2">🏅</span>
+              <h3 className="text-lg font-bold">אלוף המשימות</h3>
+            </div>
+            <p className="text-gray-600 mb-2">השלמת 20 משימות (משותף)</p>
+            <div className="progress-bar">
+              <div 
+                className="progress-fill bg-indigo-500" 
+                style={{width: `${achievements.championProgress}%`}}
+              ></div>
+            </div>
+            <div className="text-xs text-gray-500 mt-1 text-left">{achievements.championText}</div>
+          </div>
+          
+          {/* Stars Saver Achievement */}
+          <div className="bg-white rounded-lg p-4 shadow-lg border-2 border-indigo-200">
+            <div className="flex items-center mb-2">
+              <span className="text-3xl ml-2">💰</span>
+              <h3 className="text-lg font-bold">חוסך כוכבים</h3>
+            </div>
+            <p className="text-gray-600 mb-2">צבירת 30 כוכבים (משותף)</p>
+            <div className="progress-bar">
+              <div 
+                className="progress-fill bg-indigo-500" 
+                style={{width: `${achievements.starsProgress}%`}}
+              ></div>
+            </div>
+            <div className="text-xs text-gray-500 mt-1 text-left">{achievements.starsText}</div>
+          </div>
+        </div>
+        
+        {/* Personal Achievements */}
+        <h2 className="text-2xl font-bold text-center text-indigo-700 mt-8 mb-6">הישגים אישיים</h2>
+        
+        <div className="flex flex-wrap -mx-2">
+          {/* Michael's Achievements */}
+          <div className="w-full md:w-1/2 px-2 mb-6">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 shadow-lg">
+              <h3 className="text-xl font-bold text-blue-800 mb-3">מיכאל</h3>
+              
+              <div className="space-y-4">
+                {/* Streak Achievement */}
+                <div className="bg-white rounded-lg p-3 shadow border border-blue-200">
+                  <div className="flex items-center mb-1">
+                    <span className="text-2xl ml-2">🚀</span>
+                    <h4 className="text-md font-bold">מתמיד</h4>
+                  </div>
+                  <p className="text-gray-600 text-sm mb-2">השלמת משימות 3 ימים ברצף</p>
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill bg-blue-500" 
+                      style={{width: `${achievements.michaelStreakProgress}%`}}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1 text-left">{achievements.michaelStreakText}</div>
+                </div>
+                
+                {/* Rewards Collector Achievement */}
+                <div className="bg-white rounded-lg p-3 shadow border border-blue-200">
+                  <div className="flex items-center mb-1">
+                    <span className="text-2xl ml-2">🌈</span>
+                    <h4 className="text-md font-bold">אוסף פרסים</h4>
+                  </div>
+                  <p className="text-gray-600 text-sm mb-2">קניית 5 פרסים</p>
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill bg-blue-500" 
+                      style={{width: `${achievements.michaelRewardsProgress}%`}}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1 text-left">{achievements.michaelRewardsText}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Gaya's Achievements */}
+          <div className="w-full md:w-1/2 px-2 mb-6">
+            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 shadow-lg">
+              <h3 className="text-xl font-bold text-purple-800 mb-3">גאיה</h3>
+              
+              <div className="space-y-4">
+                {/* Streak Achievement */}
+                <div className="bg-white rounded-lg p-3 shadow border border-purple-200">
+                  <div className="flex items-center mb-1">
+                    <span className="text-2xl ml-2">🚀</span>
+                    <h4 className="text-md font-bold">מתמידה</h4>
+                  </div>
+                  <p className="text-gray-600 text-sm mb-2">השלמת משימות 3 ימים ברצף</p>
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill bg-purple-500" 
+                      style={{width: `${achievements.gayaStreakProgress}%`}}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1 text-left">{achievements.gayaStreakText}</div>
+                </div>
+                
+                {/* Rewards Collector Achievement */}
+                <div className="bg-white rounded-lg p-3 shadow border border-purple-200">
+                  <div className="flex items-center mb-1">
+                    <span className="text-2xl ml-2">🌈</span>
+                    <h4 className="text-md font-bold">אוספת פרסים</h4>
+                  </div>
+                  <p className="text-gray-600 text-sm mb-2">קניית 5 פרסים</p>
+                  <div className="progress-bar">
+                    <div 
+                      className="progress-fill bg-purple-500" 
+                      style={{width: `${achievements.gayaRewardsProgress}%`}}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1 text-left">{achievements.gayaRewardsText}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-300 flex justify-around items-center p-2 shadow-lg z-10">
+        <div 
+          onClick={() => setScreen('tasks')} 
+          className={`flex flex-col items-center p-2 cursor-pointer ${screen === 'tasks' ? 'text-blue-600' : 'text-gray-600'}`}
+        >
+          <div className="text-2xl">📝</div>
+          <div className="text-sm font-medium">משימות</div>
+        </div>
+        <div 
+          onClick={() => setScreen('rewards')} 
+          className={`flex flex-col items-center p-2 cursor-pointer ${screen === 'rewards' ? 'text-blue-600' : 'text-gray-600'}`}
+        >
+          <Gift className={`h-6 w-6 ${screen === 'rewards' ? 'text-green-500' : 'text-gray-500'}`} />
+          <div className="text-sm font-medium">פרסים</div>
+        </div>
+        <div 
+          onClick={() => setScreen('weekly-task-board')} 
+          className={`flex flex-col items-center p-2 cursor-pointer ${screen === 'weekly-task-board' ? 'text-blue-600' : 'text-gray-600'}`}
+        >
+          <Calendar className={`h-6 w-6 ${screen === 'weekly-task-board' ? 'text-amber-500' : 'text-gray-500'}`} />
+          <div className="text-sm font-medium">לוח שבועי</div>
+        </div>
+        <div 
+          onClick={() => setScreen('achievements')} 
+          className={`flex flex-col items-center p-2 cursor-pointer ${screen === 'achievements' ? 'text-blue-600' : 'text-gray-600'}`}
+        >
+          <Award className={`h-6 w-6 ${screen === 'achievements' ? 'text-indigo-500' : 'text-gray-500'}`} />
+          <div className="text-sm font-medium">יעדים</div>
+        </div>
+      </nav>
+
+      {/* Task Modal */}
+      {showTaskModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-xl font-bold mb-4">הוספת משימה חדשה</h3>
+            <input 
+              type="text" 
+              placeholder="שם המשימה" 
+              className="w-full p-2 border rounded mb-4"
+              value={taskName}
+              onChange={(e) => setTaskName(e.target.value)}
+            />
+            
+            <div className="mb-4">
+              <label className="block text-gray-700 mb-2">בחר אימוג'י למשימה:</label>
+              <div className="grid grid-cols-5 gap-2">
+                {['🧹', '🛏️', '🦷', '📚', '🍽️'].map((emoji) => (
+                  <div 
+                    key={emoji}
+                    className={`p-2 border rounded text-center cursor-pointer hover:bg-blue-100 ${selectedEmoji === emoji ? 'bg-blue-100 border-blue-500' : ''}`}
+                    onClick={() => setSelectedEmoji(emoji)}
+                  >
+                    {emoji}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex justify-between">
+              <button 
+                onClick={() => setShowTaskModal(false)} 
+                className="bg-gray-300 hover:bg-gray-400 py-2 px-4 rounded"
+              >
+                ביטול
+              </button>
+              <button 
+                onClick={saveTask} 
+                className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+              >
+                שמור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reward Modal */}
+      {showRewardModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-xl font-bold mb-4">הוספת פרס חדש</h3>
+            <input 
+              type="text" 
+              placeholder="שם הפרס" 
+              className="w-full p-2 border rounded mb-4"
+              value={rewardName}
+              onChange={(e) => setRewardName(e.target.value)}
+            />
+            <input 
+              type="number" 
+              placeholder="מחיר בכוכבים" 
+              className="w-full p-2 border rounded mb-4" 
+              min="1"
+              value={rewardCost}
+              onChange={(e) => setRewardCost(parseInt(e.target.value) || 0)}
+            />
+            
+            <div className="mb-4">
+              <label className="block text-gray-700 mb-2">בחר אימוג'י לפרס:</label>
+              <div className="grid grid-cols-5 gap-2">
+                {['🍦', '🎮', '🎬', '🍕', '🎨'].map((emoji) => (
+                  <div 
+                    key={emoji}
+                    className={`p-2 border rounded text-center cursor-pointer hover:bg-blue-100 ${selectedRewardEmoji === emoji ? 'bg-blue-100 border-blue-500' : ''}`}
+                    onClick={() => setSelectedRewardEmoji(emoji)}
+                  >
+                    {emoji}
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div className="flex justify-between">
+              <button 
+                onClick={() => setShowRewardModal(false)} 
+                className="bg-gray-300 hover:bg-gray-400 py-2 px-4 rounded"
+              >
+                ביטול
+              </button>
+              <button 
+                onClick={saveReward} 
+                className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+              >
+                שמור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-xl font-bold mb-4">{confirmTitle}</h3>
+            <p className="mb-4">{confirmMessage}</p>
+            <div className="flex justify-between">
+              <button 
+                onClick={() => setShowConfirmModal(false)} 
+                className="bg-gray-300 hover:bg-gray-400 py-2 px-4 rounded"
+              >
+                ביטול
+              </button>
+              <button 
+                onClick={confirmAction} 
+                className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded"
+              >
+                אישור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md text-center">
+            <div className="text-5xl mb-4">🎉</div>
+            <h3 className="text-xl font-bold mb-4">{successTitle}</h3>
+            <p className="mb-4">{successMessage}</p>
+            <button 
+              onClick={() => setShowSuccessModal(false)} 
+              className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+            >
+              סגור
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold">
+                היסטוריית פרסים - {data[historyChild as "michael" | "gaya"].name}
+              </h3>
+              <button onClick={() => setShowHistoryModal(false)} className="text-gray-500 hover:text-gray-700">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            {data[historyChild as "michael" | "gaya"].history.length === 0 ? (
+              <p className="text-center text-gray-500 py-6">אין היסטוריית פרסים עדיין.</p>
+            ) : (
+              <div className="max-h-96 overflow-y-auto">
+                {data[historyChild as "michael" | "gaya"].history.map((item, index) => (
+                  <div key={index} className="border-b py-3 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <span className="text-2xl ml-2">{item.emoji}</span>
+                      <span>{item.reward}</span>
+                    </div>
+                    <div className="flex items-center">
+                      <span className="text-gray-500 ml-2">{item.date}</span>
+                      <div className="flex items-center">
+                        <Star className="text-yellow-500 h-4 w-4 fill-yellow-500 ml-1" />
+                        <span>{item.cost}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <div className="mt-4 text-center">
+              <button 
+                onClick={() => setShowHistoryModal(false)} 
+                className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded"
+              >
+                סגור
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
